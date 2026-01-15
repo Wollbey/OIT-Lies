@@ -25,13 +25,13 @@ git push -u origin main
 
 ### 2) Create a Web Service on Render
 
-1. Go to `https://render.com` and sign in.
+1. Go to `https://render.ncom` and sign in.
 2. Click **New +** -> **Web Service**.
 3. Connect your GitHub repo and select it.
 4. Configure:
    - Runtime: **Node**
-   - Build Command: *(leave blank)*
-   - Start Command: `node server.js`
+   - Build Command: `npm install`
+   - Start Command: `npm start`
 5. Click **Create Web Service**.
 
 Render will build and deploy automatically. When it finishes, open the public URL it gives you.
