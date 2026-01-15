@@ -2,6 +2,11 @@ const totalEl = document.getElementById('totalLies');
 const lastLieEl = document.getElementById('lastLie');
 const longestGapEl = document.getElementById('longestGap');
 const lieButton = document.getElementById('lieButton');
+const usernameInput = document.getElementById('username');
+const userHint = document.getElementById('userHint');
+const leaderboardEl = document.getElementById('leaderboard');
+
+const USERNAME_KEY = 'lieTrackerUsername';
 
 function formatTimestamp(timestamp) {
   if (!timestamp) {
@@ -29,10 +34,44 @@ function formatDuration(ms) {
   return parts.join(' ');
 }
 
+function getUsername() {
+  return usernameInput.value.trim();
+}
+
+function updateUsernameState() {
+  const username = getUsername();
+  lieButton.disabled = !username;
+  userHint.textContent = username
+    ? `Tracking as ${username}.`
+    : 'Required before you can click.';
+}
+
+function renderLeaderboard(leaderboard) {
+  leaderboardEl.innerHTML = '';
+  if (!leaderboard.length) {
+    const empty = document.createElement('li');
+    empty.textContent = 'No entries yet.';
+    leaderboardEl.appendChild(empty);
+    return;
+  }
+
+  leaderboard.forEach((entry, index) => {
+    const item = document.createElement('li');
+    const name = document.createElement('strong');
+    name.textContent = `${index + 1}. ${entry.name}`;
+    const count = document.createElement('span');
+    count.textContent = `${entry.count} lies`;
+    item.appendChild(name);
+    item.appendChild(count);
+    leaderboardEl.appendChild(item);
+  });
+}
+
 function render(state) {
   totalEl.textContent = state.totalLies.toLocaleString();
   lastLieEl.textContent = formatTimestamp(state.lastLieAt);
   longestGapEl.textContent = formatDuration(state.longestGapMs);
+  renderLeaderboard(state.leaderboard || []);
 }
 
 async function fetchState() {
@@ -44,20 +83,31 @@ async function fetchState() {
 }
 
 async function incrementLie() {
+  const username = getUsername();
+  if (!username) {
+    updateUsernameState();
+    usernameInput.focus();
+    return;
+  }
+
   lieButton.disabled = true;
   try {
     const response = await fetch('/api/lie', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({})
+      body: JSON.stringify({ username })
     });
     if (!response.ok) {
-      throw new Error('Failed to record lie');
+      const payload = await response.json().catch(() => ({}));
+      throw new Error(payload.error || 'Failed to record lie');
     }
     const state = await response.json();
     render(state);
+  } catch (err) {
+    console.error(err);
   } finally {
     lieButton.disabled = false;
+    updateUsernameState();
   }
 }
 
@@ -73,6 +123,18 @@ async function init() {
 lieButton.addEventListener('click', () => {
   incrementLie();
 });
+
+usernameInput.addEventListener('input', () => {
+  const username = getUsername();
+  localStorage.setItem(USERNAME_KEY, username);
+  updateUsernameState();
+});
+
+const savedUsername = localStorage.getItem(USERNAME_KEY);
+if (savedUsername) {
+  usernameInput.value = savedUsername;
+}
+updateUsernameState();
 
 init();
 setInterval(init, 5000);

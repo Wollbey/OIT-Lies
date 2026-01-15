@@ -6,12 +6,22 @@ const url = require('url');
 const DATA_PATH = path.join(__dirname, 'data.json');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
+function defaultState() {
+  return { totalLies: 0, lastLieAt: null, longestGapMs: 0, users: {} };
+}
+
 function readState() {
   try {
     const raw = fs.readFileSync(DATA_PATH, 'utf8');
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    return {
+      totalLies: parsed.totalLies ?? 0,
+      lastLieAt: parsed.lastLieAt ?? null,
+      longestGapMs: parsed.longestGapMs ?? 0,
+      users: parsed.users ?? {}
+    };
   } catch (err) {
-    return { totalLies: 0, lastLieAt: null, longestGapMs: 0 };
+    return defaultState();
   }
 }
 
@@ -81,10 +91,20 @@ function serveStatic(req, res) {
   });
 }
 
+function buildLeaderboard(users) {
+  return Object.entries(users)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return a.name.localeCompare(b.name);
+    })
+    .slice(0, 10);
+}
+
 function handleApi(req, res) {
   if (req.method === 'GET' && req.url === '/api/state') {
     const state = readState();
-    sendJson(res, 200, state);
+    sendJson(res, 200, { ...state, leaderboard: buildLeaderboard(state.users) });
     return;
   }
 
@@ -94,18 +114,36 @@ function handleApi(req, res) {
       body += chunk.toString();
     });
     req.on('end', () => {
+      let payload = {};
+      try {
+        payload = body ? JSON.parse(body) : {};
+      } catch (err) {
+        sendJson(res, 400, { error: 'Invalid JSON body' });
+        return;
+      }
+
+      const username = String(payload.username || '').trim();
+      if (!username) {
+        sendJson(res, 400, { error: 'Username required' });
+        return;
+      }
+
       const state = readState();
       const now = Date.now();
       const gap = state.lastLieAt ? now - state.lastLieAt : 0;
 
+      const users = { ...state.users };
+      users[username] = (users[username] || 0) + 1;
+
       const nextState = {
         totalLies: state.totalLies + 1,
         lastLieAt: now,
-        longestGapMs: Math.max(state.longestGapMs, gap)
+        longestGapMs: Math.max(state.longestGapMs, gap),
+        users
       };
 
       writeState(nextState);
-      sendJson(res, 200, nextState);
+      sendJson(res, 200, { ...nextState, leaderboard: buildLeaderboard(users) });
     });
     return;
   }

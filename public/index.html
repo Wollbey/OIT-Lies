@@ -33,6 +33,19 @@
         </section>
 
         <section class="card detail">
+          <p class="label">Choose a username</p>
+          <input
+            class="text-input"
+            id="username"
+            type="text"
+            placeholder="e.g. Alex"
+            maxlength="24"
+            autocomplete="nickname"
+          />
+          <p class="helper" id="userHint">Required before you can click.</p>
+        </section>
+
+        <section class="card detail">
           <p class="label">Last lie recorded</p>
           <p class="value small" id="lastLie">Never</p>
         </section>
@@ -40,6 +53,11 @@
         <section class="card detail">
           <p class="label">Longest lie-free streak</p>
           <p class="value small" id="longestGap">0s</p>
+        </section>
+
+        <section class="card leaderboard">
+          <p class="label">Top 10 truth benders</p>
+          <ol class="leaderboard-list" id="leaderboard"></ol>
         </section>
       </main>
 

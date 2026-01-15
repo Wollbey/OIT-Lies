@@ -9,17 +9,35 @@ DATA_PATH = os.path.join(ROOT_DIR, "data.json")
 PUBLIC_DIR = os.path.join(ROOT_DIR, "public")
 
 
+def default_state():
+    return {"totalLies": 0, "lastLieAt": None, "longestGapMs": 0, "users": {}}
+
+
 def read_state():
     try:
         with open(DATA_PATH, "r", encoding="utf-8") as handle:
-            return json.load(handle)
+            data = json.load(handle)
+            return {
+                "totalLies": data.get("totalLies", 0),
+                "lastLieAt": data.get("lastLieAt"),
+                "longestGapMs": data.get("longestGapMs", 0),
+                "users": data.get("users", {}),
+            }
     except (FileNotFoundError, json.JSONDecodeError):
-        return {"totalLies": 0, "lastLieAt": None, "longestGapMs": 0}
+        return default_state()
 
 
 def write_state(state):
     with open(DATA_PATH, "w", encoding="utf-8") as handle:
         json.dump(state, handle, indent=2)
+
+
+def build_leaderboard(users):
+    leaderboard = [
+        {"name": name, "count": count} for name, count in users.items()
+    ]
+    leaderboard.sort(key=lambda item: (-item["count"], item["name"]))
+    return leaderboard[:10]
 
 
 class LieTrackerHandler(SimpleHTTPRequestHandler):
@@ -33,7 +51,9 @@ class LieTrackerHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/api/state":
             state = read_state()
-            body = json.dumps(state).encode("utf-8")
+            body = json.dumps(
+                {**state, "leaderboard": build_leaderboard(state["users"])}
+            ).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -49,17 +69,41 @@ class LieTrackerHandler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         if self.path == "/api/lie":
+            length = int(self.headers.get("Content-Length", "0"))
+            payload = {}
+            if length:
+                try:
+                    payload = json.loads(self.rfile.read(length))
+                except json.JSONDecodeError:
+                    self.send_response(400)
+                    self.end_headers()
+                    self.wfile.write(b"Invalid JSON body")
+                    return
+
+            username = str(payload.get("username", "")).strip()
+            if not username:
+                self.send_response(400)
+                self.end_headers()
+                self.wfile.write(b"Username required")
+                return
+
             state = read_state()
             now = int(time.time() * 1000)
             gap = now - state["lastLieAt"] if state["lastLieAt"] else 0
+
+            users = dict(state["users"])
+            users[username] = users.get(username, 0) + 1
 
             next_state = {
                 "totalLies": state["totalLies"] + 1,
                 "lastLieAt": now,
                 "longestGapMs": max(state["longestGapMs"], gap),
+                "users": users,
             }
             write_state(next_state)
-            body = json.dumps(next_state).encode("utf-8")
+            body = json.dumps(
+                {**next_state, "leaderboard": build_leaderboard(users)}
+            ).encode("utf-8")
 
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
