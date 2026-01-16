@@ -101,6 +101,49 @@ function buildLeaderboard(users) {
     .slice(0, 10);
 }
 
+function workingHoursGapMs(startMs, endMs) {
+  if (!startMs || !endMs || endMs <= startMs) {
+    return 0;
+  }
+
+  let total = 0;
+  const startDate = new Date(startMs);
+  const endDate = new Date(endMs);
+  let current = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
+  const endDay = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
+
+  while (current <= endDay) {
+    const workStart = new Date(
+      current.getFullYear(),
+      current.getMonth(),
+      current.getDate(),
+      8,
+      0,
+      0,
+      0
+    );
+    const workEnd = new Date(
+      current.getFullYear(),
+      current.getMonth(),
+      current.getDate(),
+      17,
+      0,
+      0,
+      0
+    );
+
+    const dayStart = Math.max(startMs, workStart.getTime());
+    const dayEnd = Math.min(endMs, workEnd.getTime());
+    if (dayEnd > dayStart) {
+      total += dayEnd - dayStart;
+    }
+
+    current.setDate(current.getDate() + 1);
+  }
+
+  return total;
+}
+
 function handleApi(req, res) {
   if (req.method === 'GET' && req.url === '/api/state') {
     const state = readState();
@@ -130,7 +173,7 @@ function handleApi(req, res) {
 
       const state = readState();
       const now = Date.now();
-      const gap = state.lastLieAt ? now - state.lastLieAt : 0;
+      const gap = state.lastLieAt ? workingHoursGapMs(state.lastLieAt, now) : 0;
 
       const users = { ...state.users };
       users[username] = (users[username] || 0) + 1;

@@ -1,6 +1,7 @@
 import json
 import os
 import time
+from datetime import datetime, timedelta
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote
 
@@ -38,6 +39,30 @@ def build_leaderboard(users):
     ]
     leaderboard.sort(key=lambda item: (-item["count"], item["name"]))
     return leaderboard[:10]
+
+
+def working_hours_gap_ms(start_ms, end_ms):
+    if not start_ms or not end_ms or end_ms <= start_ms:
+        return 0
+
+    start_dt = datetime.fromtimestamp(start_ms / 1000)
+    end_dt = datetime.fromtimestamp(end_ms / 1000)
+    current = datetime(start_dt.year, start_dt.month, start_dt.day)
+    end_day = datetime(end_dt.year, end_dt.month, end_dt.day)
+    total_ms = 0
+
+    while current <= end_day:
+        work_start = current.replace(hour=8, minute=0, second=0, microsecond=0)
+        work_end = current.replace(hour=17, minute=0, second=0, microsecond=0)
+        day_start = max(start_dt, work_start)
+        day_end = min(end_dt, work_end)
+
+        if day_end > day_start:
+            total_ms += int((day_end - day_start).total_seconds() * 1000)
+
+        current += timedelta(days=1)
+
+    return total_ms
 
 
 class LieTrackerHandler(SimpleHTTPRequestHandler):
@@ -89,7 +114,7 @@ class LieTrackerHandler(SimpleHTTPRequestHandler):
 
             state = read_state()
             now = int(time.time() * 1000)
-            gap = now - state["lastLieAt"] if state["lastLieAt"] else 0
+            gap = working_hours_gap_ms(state["lastLieAt"], now)
 
             users = dict(state["users"])
             users[username] = users.get(username, 0) + 1
