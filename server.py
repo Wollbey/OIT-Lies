@@ -4,10 +4,12 @@ import time
 from datetime import datetime, timedelta
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote
+from zoneinfo import ZoneInfo
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(ROOT_DIR, "data.json")
 PUBLIC_DIR = os.path.join(ROOT_DIR, "public")
+WORK_TIMEZONE = ZoneInfo("America/Los_Angeles")
 
 
 def default_state():
@@ -45,22 +47,39 @@ def working_hours_gap_ms(start_ms, end_ms):
     if not start_ms or not end_ms or end_ms <= start_ms:
         return 0
 
-    start_dt = datetime.fromtimestamp(start_ms / 1000)
-    end_dt = datetime.fromtimestamp(end_ms / 1000)
-    current = datetime(start_dt.year, start_dt.month, start_dt.day)
-    end_day = datetime(end_dt.year, end_dt.month, end_dt.day)
+    start_dt = datetime.fromtimestamp(start_ms / 1000, tz=WORK_TIMEZONE)
+    end_dt = datetime.fromtimestamp(end_ms / 1000, tz=WORK_TIMEZONE)
+    current_day = start_dt.date()
+    end_day = end_dt.date()
     total_ms = 0
 
-    while current <= end_day:
-        work_start = current.replace(hour=8, minute=0, second=0, microsecond=0)
-        work_end = current.replace(hour=17, minute=0, second=0, microsecond=0)
+    while current_day <= end_day:
+        work_start = datetime(
+            current_day.year,
+            current_day.month,
+            current_day.day,
+            8,
+            0,
+            0,
+            tzinfo=WORK_TIMEZONE,
+        )
+        work_end = datetime(
+            current_day.year,
+            current_day.month,
+            current_day.day,
+            17,
+            0,
+            0,
+            tzinfo=WORK_TIMEZONE,
+        )
+
         day_start = max(start_dt, work_start)
         day_end = min(end_dt, work_end)
 
         if day_end > day_start:
             total_ms += int((day_end - day_start).total_seconds() * 1000)
 
-        current += timedelta(days=1)
+        current_day = current_day + timedelta(days=1)
 
     return total_ms
 
@@ -76,6 +95,11 @@ class LieTrackerHandler(SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/api/state":
             state = read_state()
+            if state["lastLieAt"]:
+                current_gap = working_hours_gap_ms(state["lastLieAt"], int(time.time() * 1000))
+                if current_gap > state["longestGapMs"]:
+                    state["longestGapMs"] = current_gap
+                    write_state(state)
             body = json.dumps(
                 {**state, "leaderboard": build_leaderboard(state["users"])}
             ).encode("utf-8")

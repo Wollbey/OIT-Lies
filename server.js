@@ -5,6 +5,7 @@ const url = require('url');
 
 const DATA_PATH = path.join(__dirname, 'data.json');
 const PUBLIC_DIR = path.join(__dirname, 'public');
+const WORK_TIMEZONE = 'America/Los_Angeles';
 
 function defaultState() {
   return { totalLies: 0, lastLieAt: null, longestGapMs: 0, users: {} };
@@ -101,44 +102,112 @@ function buildLeaderboard(users) {
     .slice(0, 10);
 }
 
+function getTimeZoneOffsetMs(date, timeZone) {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  });
+
+  const parts = formatter.formatToParts(date).reduce((acc, part) => {
+    if (part.type !== 'literal') {
+      acc[part.type] = part.value;
+    }
+    return acc;
+  }, {});
+
+  const utcGuess = Date.UTC(
+    Number(parts.year),
+    Number(parts.month) - 1,
+    Number(parts.day),
+    Number(parts.hour),
+    Number(parts.minute),
+    Number(parts.second)
+  );
+
+  return utcGuess - date.getTime();
+}
+
+function zonedTimeToUtcMs(year, month, day, hour, minute, second, timeZone) {
+  const utcGuess = Date.UTC(year, month - 1, day, hour, minute, second);
+  const offset = getTimeZoneOffsetMs(new Date(utcGuess), timeZone);
+  return utcGuess - offset;
+}
+
+function getZonedDateParts(timestamp, timeZone) {
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+
+  const parts = formatter.formatToParts(new Date(timestamp)).reduce((acc, part) => {
+    if (part.type !== 'literal') {
+      acc[part.type] = part.value;
+    }
+    return acc;
+  }, {});
+
+  return {
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day)
+  };
+}
+
+function nextDateParts(parts) {
+  const next = new Date(Date.UTC(parts.year, parts.month - 1, parts.day) + 86400000);
+  return { year: next.getUTCFullYear(), month: next.getUTCMonth() + 1, day: next.getUTCDate() };
+}
+
 function workingHoursGapMs(startMs, endMs) {
   if (!startMs || !endMs || endMs <= startMs) {
     return 0;
   }
 
+  const startParts = getZonedDateParts(startMs, WORK_TIMEZONE);
+  const endParts = getZonedDateParts(endMs, WORK_TIMEZONE);
+  let current = startParts;
   let total = 0;
-  const startDate = new Date(startMs);
-  const endDate = new Date(endMs);
-  let current = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate());
-  const endDay = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate());
 
-  while (current <= endDay) {
-    const workStart = new Date(
-      current.getFullYear(),
-      current.getMonth(),
-      current.getDate(),
+  while (
+    current.year < endParts.year ||
+    (current.year === endParts.year &&
+      (current.month < endParts.month ||
+        (current.month === endParts.month && current.day <= endParts.day)))
+  ) {
+    const workStart = zonedTimeToUtcMs(
+      current.year,
+      current.month,
+      current.day,
       8,
       0,
       0,
-      0
+      WORK_TIMEZONE
     );
-    const workEnd = new Date(
-      current.getFullYear(),
-      current.getMonth(),
-      current.getDate(),
+    const workEnd = zonedTimeToUtcMs(
+      current.year,
+      current.month,
+      current.day,
       17,
       0,
       0,
-      0
+      WORK_TIMEZONE
     );
 
-    const dayStart = Math.max(startMs, workStart.getTime());
-    const dayEnd = Math.min(endMs, workEnd.getTime());
+    const dayStart = Math.max(startMs, workStart);
+    const dayEnd = Math.min(endMs, workEnd);
     if (dayEnd > dayStart) {
       total += dayEnd - dayStart;
     }
 
-    current.setDate(current.getDate() + 1);
+    current = nextDateParts(current);
   }
 
   return total;
@@ -147,6 +216,13 @@ function workingHoursGapMs(startMs, endMs) {
 function handleApi(req, res) {
   if (req.method === 'GET' && req.url === '/api/state') {
     const state = readState();
+    if (state.lastLieAt) {
+      const currentGap = workingHoursGapMs(state.lastLieAt, Date.now());
+      if (currentGap > state.longestGapMs) {
+        state.longestGapMs = currentGap;
+        writeState(state);
+      }
+    }
     sendJson(res, 200, { ...state, leaderboard: buildLeaderboard(state.users) });
     return;
   }

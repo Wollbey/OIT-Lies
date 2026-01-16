@@ -1,8 +1,10 @@
 # Lie Tracker
 
-A tiny multi-user counter app. Click the button to record a lie, see the total, the last time one was recorded, and the longest lie-free streak. State is stored in `data.json`.
+Lie Tracker is a simple multi-user counter for tracking "lies" in a shared space. Anyone can enter a username, click the button, and the app updates a shared total, the last time a lie was recorded, and the longest lie-free streak (counted only during 8:00am–5:00pm Pacific time). A top-10 leaderboard shows who has clicked the most.
 
-## Local development
+## Setup
+
+### Local development
 
 ```bash
 node server.js
@@ -10,9 +12,9 @@ node server.js
 
 Open `http://localhost:3000`.
 
-## Deploy to Render (recommended)
+### Deploy to Render (recommended)
 
-### 1) Push the project to GitHub
+1) Push the project to GitHub
 
 ```bash
 git init
@@ -23,9 +25,9 @@ git remote add origin https://github.com/YOUR_USER/YOUR_REPO.git
 git push -u origin main
 ```
 
-### 2) Create a Web Service on Render
+2) Create a Web Service on Render
 
-1. Go to `https://render.ncom` and sign in.
+1. Go to `https://render.com` and sign in.
 2. Click **New +** -> **Web Service**.
 3. Connect your GitHub repo and select it.
 4. Configure:
@@ -35,6 +37,23 @@ git push -u origin main
 5. Click **Create Web Service**.
 
 Render will build and deploy automatically. When it finishes, open the public URL it gives you.
+
+## How it works
+
+- `server.js` serves the static site in `public/` and provides two endpoints: `GET /api/state` and `POST /api/lie`.
+- `public/app.js` polls `GET /api/state` every 5 seconds and sends `POST /api/lie` with the username when someone clicks the button.
+- The server updates `data.json`, recalculates the leaderboard, and returns the latest state to all clients.
+- The longest lie-free streak only counts time within 8:00am–5:00pm Pacific time.
+
+## What each file does
+
+- `server.js`: Node server, API endpoints, state persistence, and work-hours streak logic.
+- `server.py`: Optional Python server with the same logic (use if you don’t want Node).
+- `public/index.html`: Page structure and layout.
+- `public/styles.css`: Visual design and layout styles.
+- `public/app.js`: Frontend behavior, polling, and username handling.
+- `data.json`: Stored state (total lies, last lie time, longest streak, per-user counts).
+- `package.json`: Render build/start configuration.
 
 ## Persistence notes
 
